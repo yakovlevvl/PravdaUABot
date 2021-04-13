@@ -31,7 +31,7 @@ final class BotService {
             let repeatedTimerStopHandler = CommandHandler(commands: ["/stop"], callback: repeatedTimerStop)
             dispatcher.add(handler: repeatedTimerStopHandler)
             
-            _ = try Updater(bot: bot, dispatcher: dispatcher).startLongpolling().wait()
+            _ = try Updater(bot: bot, dispatcher: dispatcher).startLongpolling()
             
         } catch {
             print(error.localizedDescription)
