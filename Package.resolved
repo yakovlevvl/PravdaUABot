@@ -182,6 +182,15 @@
         }
       },
       {
+        "package": "SWXMLHash",
+        "repositoryURL": "https://github.com/drmohundro/SWXMLHash.git",
+        "state": {
+          "branch": null,
+          "revision": "9183170d20857753d4f331b0ca63f73c60764bf3",
+          "version": "5.0.2"
+        }
+      },
+      {
         "package": "Telegrammer",
         "repositoryURL": "https://github.com/givip/Telegrammer.git",
         "state": {

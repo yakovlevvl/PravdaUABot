@@ -8,8 +8,11 @@ final class BotService {
     private let bot: Bot
     private let jobsQueue: BasicJobQueue<Chat>
     private var userJobs = [Int64: String]()
+    private var userLastArticleId = [Int64: String]()
+    private let pravdaService: PravdaService
     
-    init() {
+    init(pravdaService: PravdaService) {
+        self.pravdaService = pravdaService
         let token = "1772828451:AAGV8RkXjtMPNKAl4PFDDH5b0kCKMeH6Sp4"
         let settings = Bot.Settings(token: token)
         bot = try! Bot(settings: settings)
@@ -19,17 +22,16 @@ final class BotService {
     
     private func configure() {
         do {
-            // Handle all incoming messages.
             let dispatcher = Dispatcher(bot: bot)
             
-//            let onceTimerStartHandler = CommandHandler(commands: ["/once"], callback: onceTimerStart)
-//            dispatcher.add(handler: onceTimerStartHandler)
+            let latestCommandHandler = CommandHandler(commands: ["/latest"], callback: latestCommand)
+            dispatcher.add(handler: latestCommandHandler)
             
-            let repeatedTimerStartHandler = CommandHandler(commands: ["/start"], callback: repeatedTimerStart)
-            dispatcher.add(handler: repeatedTimerStartHandler)
+            let startCommandHandler = CommandHandler(commands: ["/start"], callback: startCommand)
+            dispatcher.add(handler: startCommandHandler)
             
-            let repeatedTimerStopHandler = CommandHandler(commands: ["/stop"], callback: repeatedTimerStop)
-            dispatcher.add(handler: repeatedTimerStopHandler)
+            let stopCommandHandler = CommandHandler(commands: ["/stop"], callback: stopCommand)
+            dispatcher.add(handler: stopCommandHandler)
             
             _ = try Updater(bot: bot, dispatcher: dispatcher).startLongpolling()
             
@@ -38,27 +40,25 @@ final class BotService {
         }
     }
     
-    private func repeatedTimerStart(_ update: Update, _ context: BotContext?) throws {
+    private func startCommand(_ update: Update, _ context: BotContext?) throws {
         guard let message = update.message,
               let user = message.from else {
             return
         }
         stopJobIfNeeded(for: user.id)
-        let interval = TimeAmount.seconds(10)
-        let timerJob = RepeatableJob(when: Date(), interval: interval, context: message.chat) { [weak self] chat in
-            guard let chat = chat else {
-                return
-            }
-            let params = Bot.SendMessageParams(chatId: .chat(chat.id), text: "Receive text")
-            try self?.bot.sendMessage(params: params)
+        let interval = TimeAmount.seconds(600)
+        let timerJob = RepeatableJob(
+            when: Date(),
+            interval: interval,
+            context: message.chat
+        ) { [weak self] _ in
+            self?.sendLatestArticle(message, force: false)
         }
-        
         userJobs[user.id] = timerJob.id
-        
         _ = jobsQueue.scheduleRepeated(timerJob)
     }
     
-    private func repeatedTimerStop(_ update: Update, _ context: BotContext?) throws {
+    private func stopCommand(_ update: Update, _ context: BotContext?) throws {
         guard let message = update.message,
               let user = message.from else {
             return
@@ -66,12 +66,38 @@ final class BotService {
         stopJobIfNeeded(for: user.id)
     }
     
+    private func latestCommand(_ update: Update, _ context: BotContext?) {
+        guard let message = update.message else {
+            return
+        }
+        sendLatestArticle(message, force: true)
+    }
+    
     private func stopJobIfNeeded(for userId: Int64) {
+        userLastArticleId[userId] = nil
         if let scheduledJobId = userJobs[userId] {
             if let notFinishedJob = jobsQueue.jobs.first(where: { $0.id == scheduledJobId }) {
                 notFinishedJob.scheduleRemoval()
             }
             userJobs.removeValue(forKey: userId)
+        }
+    }
+    
+    private func sendLatestArticle(_ message: Message, force: Bool) {
+        _ = pravdaService.getLatestArticle().flatMapThrowing { [weak self] article in
+            guard let self = self,
+                  let user = message.from,
+                  let article = article else {
+                return
+            }
+            if !force,
+               self.userLastArticleId[user.id] == article.link {
+                return
+            }
+            let text = "\(article.link)"
+            let params = Bot.SendMessageParams(chatId: .chat(message.chat.id), text: text)
+            try self.bot.sendMessage(params: params)
+            self.userLastArticleId[user.id] = article.link
         }
     }
 }
